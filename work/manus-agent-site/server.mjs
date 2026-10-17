@@ -70,11 +70,32 @@ async function saveJson(filePath, data) {
 let keyPool = await loadJson(keysFilePath, []);
 let chatList = await loadJson(chatsFilePath, []);
 
-// Sync with .env if needed
+// Sync with .env / environment variables if needed
 async function initializeKeys() {
-  const envKey = process.env.MANUS_API_KEY || "";
-  const extraKeys = (process.env.MANUS_API_KEYS || "").split(",").map(k => k.trim()).filter(Boolean);
-  const candidates = [envKey, ...extraKeys].filter(k => k && k !== "your_manus_api_key_here");
+  const envCandidates = [];
+
+  // 1. Check MANUS_API_KEY
+  if (process.env.MANUS_API_KEY) {
+    envCandidates.push(process.env.MANUS_API_KEY.trim());
+  }
+
+  // 2. Check comma-separated MANUS_API_KEYS
+  if (process.env.MANUS_API_KEYS) {
+    for (const k of process.env.MANUS_API_KEYS.split(",")) {
+      if (k.trim()) envCandidates.push(k.trim());
+    }
+  }
+
+  // 3. Check numbered keys like MANUS_API_KEY_2, MANUS_API_KEY_3, etc.
+  for (const [name, val] of Object.entries(process.env)) {
+    if (/^MANUS_API_KEY_\d+$/i.test(name) || /^MANUS_KEY_\d+$/i.test(name)) {
+      if (val && val.trim()) envCandidates.push(val.trim());
+    }
+  }
+
+  const candidates = [...new Set(envCandidates)].filter(
+    k => k && k !== "your_manus_api_key_here"
+  );
 
   let modified = false;
   for (const rawKey of candidates) {
