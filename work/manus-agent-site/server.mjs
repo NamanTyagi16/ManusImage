@@ -26,7 +26,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const HOST = process.env.HOST || "127.0.0.1";
+const HOST = process.env.HOST || "0.0.0.0";
 const parsedPort = Number(process.env.PORT || 5188);
 const PORT = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort < 65536 ? parsedPort : 5188;
 const MANUS_BASE_URL = "https://api.manus.ai/v2";
