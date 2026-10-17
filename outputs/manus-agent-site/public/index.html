@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manus AI Unlimited • Multi-Key Agent Workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css?v=20" />
+  </head>
+  <body>
+    <div class="app-layout">
+      <!-- SIDEBAR -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <div class="brand">
+            <div class="brand-logo">M</div>
+            <div class="brand-info">
+              <span class="brand-title">Manus AI</span>
+              <span class="brand-subtitle">Unlimited Pool</span>
+            </div>
+          </div>
+          <button class="icon-btn theme-toggle" id="themeToggle" title="Toggle Theme" type="button">
+            <span class="theme-icon">◑</span>
+          </button>
+        </div>
+
+        <!-- NEW CHAT BUTTON -->
+        <button class="btn-new-chat" id="newChatButton" type="button">
+          <span class="btn-icon">+</span>
+          <span class="btn-text">New Task Chat</span>
+          <kbd class="shortcut-key">⌘N</kbd>
+        </button>
+
+        <!-- KEY STATUS SUMMARY PILL -->
+        <div class="key-summary-pill" id="openKeysModalBtn" role="button" tabindex="0" title="Manage API Keys">
+          <div class="key-summary-dot pulse"></div>
+          <div class="key-summary-text">
+            <strong id="keySummaryTitle">Checking Keys...</strong>
+            <span id="keySummaryCredits">-- credits available</span>
+          </div>
+          <span class="key-summary-action">Keys ⚙</span>
+        </div>
+
+        <!-- SEARCH -->
+        <div class="chat-search">
+          <span class="search-icon">⌕</span>
+          <input type="text" id="chatSearchInput" placeholder="Filter conversations..." />
+        </div>
+
+        <!-- CHATS LIST -->
+        <div class="chat-list-section">
+          <div class="section-label">
+            <span>Conversations</span>
+            <button class="sync-btn" id="syncChatsBtn" title="Sync recent Manus tasks" type="button">↻ Sync</button>
+          </div>
+          <div class="chat-list" id="chatList">
+            <!-- Dynamic chats injected here -->
+          </div>
+        </div>
+
+        <!-- SIDEBAR FOOTER -->
+        <div class="sidebar-footer">
+          <button class="footer-btn" id="openKeysDrawerBtn" type="button">
+            <span class="footer-icon">🔑</span>
+            <span>API Keys Pool</span>
+            <span class="badge" id="keysCountBadge">0</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- MAIN WORKSPACE -->
+      <main class="main-content">
+        <!-- TOP APPBAR -->
+        <header class="appbar">
+          <div class="appbar-left">
+            <button class="icon-btn sidebar-toggle" id="sidebarToggle" type="button" title="Toggle sidebar">☰</button>
+            <div class="current-chat-info">
+              <h2 class="chat-title" id="currentChatTitle">New Conversation</h2>
+              <div class="chat-meta">
+                <span class="status-badge" id="currentChatStatus">Idle</span>
+                <span class="key-badge" id="currentChatKey">Auto Pool</span>
+                <span class="task-id-badge" id="currentChatTaskId"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="appbar-right">
+            <!-- PUBLIC CHAT SHARE BUTTON -->
+            <div class="share-action-group" id="shareActionGroup" style="display: none;">
+              <button class="btn-share-link" id="copyShareUrlBtn" type="button" title="Copy public Manus link">
+                <span>📋 Copy Public Link</span>
+              </button>
+              <a href="#" target="_blank" rel="noopener noreferrer" class="btn-open-share" id="openShareUrlLink">
+                <span>Open in Manus ↗</span>
+              </a>
+            </div>
+          </div>
+        </header>
+
+        <!-- CHAT STREAM -->
+        <div class="chat-stream-container" id="chatStreamContainer">
+          <!-- EMPTY STATE / HERO -->
+          <div class="empty-hero" id="emptyHero">
+            <div class="hero-badge">⚡ Manus AI Unlimited Multi-Key Engine</div>
+            <h1 class="hero-title">What would you like Manus to build?</h1>
+            <p class="hero-desc">
+              Execute deep research, automations, coding, or data synthesis. Run single threads or spawn independent background tasks with automatic key rotation and public share links.
+            </p>
+
+            <div class="hero-grid">
+              <div class="prompt-card" data-prompt="Research the top 5 competitors in AI developer tools, compare pricing, key features, and summarize in a detailed markdown table.">
+                <div class="card-icon">📊</div>
+                <strong>Competitor Analysis</strong>
+                <p>Analyze top AI developer tools with feature and pricing tables.</p>
+              </div>
+              <div class="prompt-card" data-prompt="Write a Node.js script that fetches real-time cryptocurrency prices, computes a 7-day moving average, and exports to a clean CSV file.">
+                <div class="card-icon">⚡</div>
+                <strong>Script & Data Pipeline</strong>
+                <p>Generate a complete Node.js data collector with CSV output.</p>
+              </div>
+              <div class="prompt-card" data-prompt="Create an executive summary and step-by-step launch plan for an AI SaaS startup in 2026.">
+                <div class="card-icon">🚀</div>
+                <strong>Execution Strategy</strong>
+                <p>Build a detailed launch timeline with milestones and risks.</p>
+              </div>
+              <div class="prompt-card" data-prompt="Audit this web architecture for high scalability and recommend 5 key performance improvements.">
+                <div class="card-icon">🛡️</div>
+                <strong>Architecture Review</strong>
+                <p>Identify bottlenecks and prescribe performance enhancements.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- MESSAGES CONTAINER -->
+          <div class="messages-flow" id="messagesFlow" style="display: none;">
+            <!-- Message elements dynamically created here -->
+          </div>
+        </div>
+
+        <!-- COMPOSER DOCK -->
+        <footer class="composer-dock">
+          <!-- ROUTING CONTROL BAR -->
+          <div class="composer-toolbar">
+            <div class="routing-mode-selector">
+              <label class="mode-radio">
+                <input type="radio" name="routingMode" value="continue" id="modeContinue" checked />
+                <span class="mode-pill" title="Send this prompt into the currently open chat">
+                  <span class="mode-icon">💬</span> Continue Current Chat
+                </span>
+              </label>
+              <label class="mode-radio">
+                <input type="radio" name="routingMode" value="new" id="modeNew" />
+                <span class="mode-pill" title="Start a fresh independent task running in the background">
+                  <span class="mode-icon">🚀</span> Start as New Background Chat
+                </span>
+              </label>
+            </div>
+
+            <div class="toolbar-right">
+              <!-- KEY PICKER -->
+              <div class="key-picker-wrapper">
+                <span class="picker-label">Key:</span>
+                <select id="keySelector" title="Select which API key will run this task">
+                  <option value="auto">⚡ Auto Pool (Balanced)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- COMPOSER INPUT BOX -->
+          <form class="composer-box" id="composerForm">
+            <!-- ATTACHMENT PREVIEW TRAY -->
+            <div class="attachment-tray" id="attachmentTray"></div>
+
+            <div class="composer-input-row">
+              <button class="btn-attach" id="attachBtn" type="button" title="Attach files or media">
+                <span>📎</span>
+              </button>
+              <input
+                type="file"
+                id="fileInput"
+                multiple
+                class="visually-hidden"
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.csv,.xlsx,.xls,.ppt,.pptx,.zip,.json,.py,.js,.html,.css"
+              />
+
+              <textarea
+                id="composerInput"
+                rows="1"
+                placeholder="Give Manus a task or ask a follow-up question... (Shift+Enter for new line)"
+              ></textarea>
+
+              <button class="btn-send" id="sendBtn" type="submit" title="Send">
+                <span class="send-label">Send</span>
+                <span class="send-icon">↑</span>
+              </button>
+            </div>
+          </form>
+
+          <div class="composer-footnote">
+            <span>Manus tasks run autonomously in the cloud • Public share links are automatically generated upon completion</span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <!-- API KEYS MODAL / DRAWER -->
+    <div class="modal-overlay" id="keysModalOverlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h3>🔑 Manus API Keys Pool</h3>
+            <p>Add multiple keys to bypass individual quota limits and distribute concurrent background tasks.</p>
+          </div>
+          <button class="icon-btn modal-close" id="closeKeysModalBtn" type="button">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- ADD KEY FORM -->
+          <form class="add-key-form" id="addKeyForm">
+            <div class="form-row">
+              <div class="form-group flex-2">
+                <label for="newApiKeyInput">Manus API Key (sk-...)</label>
+                <input
+                  type="password"
+                  id="newApiKeyInput"
+                  placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+                  required
+                  autocomplete="off"
+                />
+              </div>
+              <div class="form-group flex-1">
+                <label for="newKeyLabelInput">Label / Account Name</label>
+                <input type="text" id="newKeyLabelInput" placeholder="e.g. Account 2 / Backup" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn-primary" id="saveKeyBtn" type="submit">
+                <span>Verify & Add Key</span>
+              </button>
+              <button class="btn-secondary" id="refreshKeysBtn" type="button">
+                <span>↻ Refresh All Quotas</span>
+              </button>
+            </div>
+            <div class="form-feedback" id="keyFormFeedback"></div>
+          </form>
+
+          <!-- CONFIGURED KEYS LIST -->
+          <div class="configured-keys-section">
+            <h4>Configured Keys (<span id="modalKeysCount">0</span>)</h4>
+            <div class="keys-list" id="keysListContainer">
+              <!-- Injected dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div class="toast" id="toast"></div>
+
+    <script src="app.js?v=20"></script>
+  </body>
+</html>
