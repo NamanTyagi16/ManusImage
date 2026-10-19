@@ -36,6 +36,12 @@
           <kbd class="shortcut-key">⌘N</kbd>
         </button>
 
+        <!-- NEW IMAGE TASK BUTTON -->
+        <button class="btn-new-chat btn-new-image-task" id="newImageTaskBtn" type="button" style="margin-top: 6px; background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);">
+          <span class="btn-icon">🎨</span>
+          <span class="btn-text">Batch Image Generator</span>
+        </button>
+
         <!-- KEY STATUS SUMMARY PILL -->
         <div class="key-summary-pill" id="openKeysModalBtn" role="button" tabindex="0" title="Manage API Keys">
           <div class="key-summary-dot pulse"></div>
@@ -50,6 +56,17 @@
         <div class="chat-search">
           <span class="search-icon">⌕</span>
           <input type="text" id="chatSearchInput" placeholder="Filter conversations..." />
+        </div>
+
+        <!-- IMAGE TASKS LIST -->
+        <div class="chat-list-section" id="imageTasksSection">
+          <div class="section-label">
+            <span>🎨 Image Tasks</span>
+            <button class="sync-btn" id="refreshImageTasksBtn" title="Refresh Tasks" type="button">↻</button>
+          </div>
+          <div class="chat-list" id="imageTasksList">
+            <!-- Dynamic image tasks injected here -->
+          </div>
         </div>
 
         <!-- CHATS LIST -->
@@ -139,6 +156,134 @@
           <!-- MESSAGES CONTAINER -->
           <div class="messages-flow" id="messagesFlow" style="display: none;">
             <!-- Message elements dynamically created here -->
+          </div>
+        </div>
+
+        <!-- IMAGE TASK DASHBOARD -->
+        <div class="image-task-dashboard" id="imageTaskDashboard" style="display: none;">
+          <!-- Task Header & Overview -->
+          <div class="itd-header">
+            <div class="itd-title-group">
+              <div class="itd-badge-row">
+                <span class="itd-type-badge">🎨 Batch Image Task</span>
+                <span class="status-badge" id="itdStatusBadge">Paused</span>
+                <span class="key-badge" id="itdKeyBadge">Auto Pool</span>
+                <span class="task-id-badge" id="itdTaskIdBadge"></span>
+              </div>
+              <h1 class="itd-title" id="itdTaskTitle">TASK: Generate 150 Images</h1>
+              <p class="itd-script-preview" id="itdScriptPreview"></p>
+            </div>
+            <div class="itd-header-actions">
+              <button class="btn-action-primary" id="itdDownloadZipBtn" type="button" title="Download all saved images as ZIP archive">
+                <span>📦 Download Completed Images (ZIP)</span>
+              </button>
+              <button class="btn-action-secondary" id="itdViewGalleryBtn" type="button">
+                <span>🖼 View Gallery</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Stats Grid -->
+          <div class="itd-stats-grid">
+            <div class="itd-stat-card">
+              <span class="itd-stat-label">Total Requested</span>
+              <strong class="itd-stat-value" id="itdStatTotal">150</strong>
+            </div>
+            <div class="itd-stat-card itd-stat-success">
+              <span class="itd-stat-label">Successfully Saved</span>
+              <strong class="itd-stat-value" id="itdStatSaved">101</strong>
+            </div>
+            <div class="itd-stat-card itd-stat-active">
+              <span class="itd-stat-label">Currently Generating</span>
+              <strong class="itd-stat-value" id="itdStatGenerating">0</strong>
+            </div>
+            <div class="itd-stat-card itd-stat-warning">
+              <span class="itd-stat-label">Remaining</span>
+              <strong class="itd-stat-value" id="itdStatRemaining">49</strong>
+            </div>
+            <div class="itd-stat-card itd-stat-danger">
+              <span class="itd-stat-label">Failed</span>
+              <strong class="itd-stat-value" id="itdStatFailed">0</strong>
+            </div>
+          </div>
+
+          <!-- Progress Bar & Last Saved Info -->
+          <div class="itd-progress-section">
+            <div class="itd-progress-labels">
+              <span class="itd-progress-pct" id="itdProgressPct">67.3% Completed</span>
+              <span class="itd-last-saved" id="itdLastSavedLabel">Last successfully saved image: image_101.png</span>
+            </div>
+            <div class="itd-progress-track">
+              <div class="itd-progress-fill" id="itdProgressFill" style="width: 67.3%;"></div>
+            </div>
+          </div>
+
+          <!-- Quota Exhaustion / API Key Replacement Box (Shows when paused) -->
+          <div class="itd-resume-panel" id="itdResumePanel" style="display: none;">
+            <div class="itd-alert-banner">
+              <div class="alert-icon">⚠️</div>
+              <div class="alert-content">
+                <strong id="itdPauseReason">API quota exhausted</strong>
+                <p>
+                  Task paused at image <span id="itdPausedIndex">101</span> of <span id="itdPausedTotal">150</span>.
+                  All <span id="itdSavedCountText">101</span> completed images are securely saved and can be downloaded right now.
+                  Provide a new, valid API key below to resume generating images <span id="itdNextIndex">102</span> through <span id="itdEndIndex">150</span> without regenerating completed images.
+                </p>
+              </div>
+            </div>
+
+            <div class="itd-key-form">
+              <div class="itd-form-row">
+                <div class="itd-input-group flex-2">
+                  <label for="itdNewApiKey">Enter New API Key (sk-...)</label>
+                  <input
+                    type="password"
+                    id="itdNewApiKey"
+                    placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+                    autocomplete="off"
+                  />
+                </div>
+                <div class="itd-input-group flex-1">
+                  <label for="itdNewKeyLabel">Account Label</label>
+                  <input type="text" id="itdNewKeyLabel" placeholder="e.g. Account 2" />
+                </div>
+              </div>
+              <div class="itd-form-actions">
+                <button class="btn-validate" id="itdValidateKeyBtn" type="button">
+                  <span>🔍 Validate API Key</span>
+                </button>
+                <button class="btn-resume-task" id="itdResumeTaskBtn" type="button" disabled>
+                  <span>▶ Resume Task</span>
+                </button>
+              </div>
+              <div class="itd-feedback" id="itdKeyFeedback"></div>
+            </div>
+          </div>
+
+          <!-- Running State Control Banner (Shows when running) -->
+          <div class="itd-running-banner" id="itdRunningBanner" style="display: none;">
+            <div class="running-indicator">
+              <div class="spinner-small"></div>
+              <span>Generating remaining images in background... Saving each image immediately to persistent disk.</span>
+            </div>
+            <button class="btn-pause-task" id="itdPauseTaskBtn" type="button">
+              <span>⏸ Pause Task</span>
+            </button>
+          </div>
+
+          <!-- Gallery Section -->
+          <div class="itd-gallery-section" id="itdGallerySection">
+            <div class="gallery-header">
+              <h3>Saved Images (<span id="itdGalleryCount">0</span>)</h3>
+              <div class="gallery-actions">
+                <button class="btn-download-all" id="itdGalleryDownloadZipBtn" type="button">
+                  <span>📥 Download All (<span id="itdGalleryZipCount">0</span>) as ZIP</span>
+                </button>
+              </div>
+            </div>
+            <div class="image-gallery-grid" id="itdGalleryGrid">
+              <!-- Dynamic image cards injected here -->
+            </div>
           </div>
         </div>
 
@@ -257,6 +402,71 @@
               <!-- Injected dynamically -->
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEW IMAGE TASK MODAL -->
+    <div class="modal-overlay" id="imageTaskModalOverlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h3>🎨 Launch Batch Image Task</h3>
+            <p>Generate large batches of storyboard, cinematic, or concept images with automatic quota failover and persistent checkpointing.</p>
+          </div>
+          <button class="icon-btn modal-close" id="closeImageTaskModalBtn" type="button">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <form class="image-task-form" id="imageTaskForm">
+            <div class="form-group">
+              <label for="itTaskTitle">Task Title</label>
+              <input type="text" id="itTaskTitle" placeholder="e.g. Generate 150 Storyboard Images" required />
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="itTotalCount">Total Images Requested</label>
+                <input type="number" id="itTotalCount" value="150" min="1" max="1000" required />
+              </div>
+              <div class="form-group flex-1">
+                <label for="itAspectRatio">Aspect Ratio</label>
+                <select id="itAspectRatio">
+                  <option value="16:9">16:9 (Landscape Cinematic)</option>
+                  <option value="1:1">1:1 (Square)</option>
+                  <option value="9:16">9:16 (Portrait / Mobile)</option>
+                  <option value="4:3">4:3 (Classic)</option>
+                </select>
+              </div>
+              <div class="form-group flex-1">
+                <label for="itStyle">Style Preset</label>
+                <select id="itStyle">
+                  <option value="photorealistic">Photorealistic</option>
+                  <option value="cinematic">Cinematic 3D</option>
+                  <option value="anime">Anime / Manga</option>
+                  <option value="oil_painting">Oil Painting</option>
+                  <option value="digital_art">Digital Art</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="itScript">Script / Prompt Instructions</label>
+              <textarea
+                id="itScript"
+                rows="4"
+                placeholder="Describe your scene prompts or script scenes. The system will automatically number each image, sequence the scenes, and persist every completed image immediately..."
+                required
+              ></textarea>
+            </div>
+
+            <div class="form-actions">
+              <button class="btn-primary" id="launchImageTaskBtn" type="submit">
+                <span>🚀 Launch Image Task</span>
+              </button>
+            </div>
+            <div class="form-feedback" id="imageTaskFeedback"></div>
+          </form>
         </div>
       </div>
     </div>

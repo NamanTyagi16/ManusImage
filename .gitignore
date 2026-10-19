@@ -4,6 +4,10 @@
 **/*.log
 **/data/keys.json
 **/data/chats.json
+**/data/image_tasks.json
+**/data/images/
+**/data/tasks/
+**/test-data/
 
 # Node dependencies
 **/node_modules/
@@ -12,3 +16,4 @@
 # OS files
 Thumbs.db
 .DS_Store
+

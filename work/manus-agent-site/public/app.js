@@ -13,6 +13,11 @@
   let pollingInterval = null;
   let isSending = false;
 
+  let imageTasks = [];
+  let activeImageTaskId = null;
+  let isImageTaskView = false;
+  let validatedKeyId = null;
+
   // DOM Elements
   const sidebar = document.getElementById("sidebar");
   const sidebarToggle = document.getElementById("sidebarToggle");
@@ -21,6 +26,59 @@
   const chatSearchInput = document.getElementById("chatSearchInput");
   const chatListEl = document.getElementById("chatList");
   const syncChatsBtn = document.getElementById("syncChatsBtn");
+
+  // Image Tasks DOM
+  const newImageTaskBtn = document.getElementById("newImageTaskBtn");
+  const refreshImageTasksBtn = document.getElementById("refreshImageTasksBtn");
+  const imageTasksList = document.getElementById("imageTasksList");
+  const imageTaskDashboard = document.getElementById("imageTaskDashboard");
+  const imageTaskModalOverlay = document.getElementById("imageTaskModalOverlay");
+  const closeImageTaskModalBtn = document.getElementById("closeImageTaskModalBtn");
+  const imageTaskForm = document.getElementById("imageTaskForm");
+  const itTaskTitle = document.getElementById("itTaskTitle");
+  const itTotalCount = document.getElementById("itTotalCount");
+  const itAspectRatio = document.getElementById("itAspectRatio");
+  const itStyle = document.getElementById("itStyle");
+  const itScript = document.getElementById("itScript");
+  const launchImageTaskBtn = document.getElementById("launchImageTaskBtn");
+  const imageTaskFeedback = document.getElementById("imageTaskFeedback");
+
+  const itdTaskTitle = document.getElementById("itdTaskTitle");
+  const itdScriptPreview = document.getElementById("itdScriptPreview");
+  const itdStatusBadge = document.getElementById("itdStatusBadge");
+  const itdKeyBadge = document.getElementById("itdKeyBadge");
+  const itdTaskIdBadge = document.getElementById("itdTaskIdBadge");
+  const itdStatTotal = document.getElementById("itdStatTotal");
+  const itdStatSaved = document.getElementById("itdStatSaved");
+  const itdStatGenerating = document.getElementById("itdStatGenerating");
+  const itdStatRemaining = document.getElementById("itdStatRemaining");
+  const itdStatFailed = document.getElementById("itdStatFailed");
+  const itdProgressPct = document.getElementById("itdProgressPct");
+  const itdLastSavedLabel = document.getElementById("itdLastSavedLabel");
+  const itdProgressFill = document.getElementById("itdProgressFill");
+
+  const itdResumePanel = document.getElementById("itdResumePanel");
+  const itdPauseReason = document.getElementById("itdPauseReason");
+  const itdPausedIndex = document.getElementById("itdPausedIndex");
+  const itdPausedTotal = document.getElementById("itdPausedTotal");
+  const itdSavedCountText = document.getElementById("itdSavedCountText");
+  const itdNextIndex = document.getElementById("itdNextIndex");
+  const itdEndIndex = document.getElementById("itdEndIndex");
+  const itdNewApiKey = document.getElementById("itdNewApiKey");
+  const itdNewKeyLabel = document.getElementById("itdNewKeyLabel");
+  const itdValidateKeyBtn = document.getElementById("itdValidateKeyBtn");
+  const itdResumeTaskBtn = document.getElementById("itdResumeTaskBtn");
+  const itdKeyFeedback = document.getElementById("itdKeyFeedback");
+
+  const itdRunningBanner = document.getElementById("itdRunningBanner");
+  const itdPauseTaskBtn = document.getElementById("itdPauseTaskBtn");
+
+  const itdDownloadZipBtn = document.getElementById("itdDownloadZipBtn");
+  const itdViewGalleryBtn = document.getElementById("itdViewGalleryBtn");
+  const itdGalleryDownloadZipBtn = document.getElementById("itdGalleryDownloadZipBtn");
+  const itdGalleryCount = document.getElementById("itdGalleryCount");
+  const itdGalleryZipCount = document.getElementById("itdGalleryZipCount");
+  const itdGalleryGrid = document.getElementById("itdGalleryGrid");
 
   const openKeysModalBtn = document.getElementById("openKeysModalBtn");
   const openKeysDrawerBtn = document.getElementById("openKeysDrawerBtn");
@@ -69,6 +127,7 @@
     setupEventListeners();
     await loadKeys();
     await loadChats();
+    await loadImageTasks();
     startBackgroundPolling();
   }
 
@@ -116,6 +175,26 @@
     closeKeysModalBtn.addEventListener("click", closeKeysModal);
     keysModalOverlay.addEventListener("click", (e) => {
       if (e.target === keysModalOverlay) closeKeysModal();
+    });
+
+    // Image Task Modals & Buttons
+    newImageTaskBtn.addEventListener("click", openImageTaskModal);
+    refreshImageTasksBtn.addEventListener("click", loadImageTasks);
+    closeImageTaskModalBtn.addEventListener("click", closeImageTaskModal);
+    imageTaskModalOverlay.addEventListener("click", (e) => {
+      if (e.target === imageTaskModalOverlay) closeImageTaskModal();
+    });
+    imageTaskForm.addEventListener("submit", handleCreateImageTask);
+
+    // Image Task Dashboard actions
+    itdValidateKeyBtn.addEventListener("click", handleValidateNewKey);
+    itdResumeTaskBtn.addEventListener("click", handleResumeTask);
+    itdPauseTaskBtn.addEventListener("click", handlePauseTask);
+    itdDownloadZipBtn.addEventListener("click", () => handleDownloadZip(activeImageTaskId));
+    itdGalleryDownloadZipBtn.addEventListener("click", () => handleDownloadZip(activeImageTaskId));
+    itdViewGalleryBtn.addEventListener("click", () => {
+      const el = document.getElementById("itdGallerySection");
+      if (el) el.scrollIntoView({ behavior: "smooth" });
     });
 
     // Add Key Form
@@ -355,6 +434,12 @@
 
   function createNewChatSession() {
     activeChatId = null;
+    isImageTaskView = false;
+    activeImageTaskId = null;
+    imageTaskDashboard.style.display = "none";
+    chatStreamContainer.style.display = "block";
+    document.querySelectorAll(".image-task-item").forEach(el => el.classList.remove("active"));
+
     currentChatTitle.textContent = "New Conversation";
     currentChatStatus.textContent = "Idle";
     currentChatStatus.className = "status-badge";
@@ -376,6 +461,12 @@
 
   function selectChat(chatId) {
     activeChatId = chatId;
+    isImageTaskView = false;
+    activeImageTaskId = null;
+    imageTaskDashboard.style.display = "none";
+    chatStreamContainer.style.display = "block";
+    document.querySelectorAll(".image-task-item").forEach(el => el.classList.remove("active"));
+
     const chat = getActiveChat();
     if (!chat) {
       createNewChatSession();
@@ -602,9 +693,31 @@
   function startBackgroundPolling() {
     if (pollingInterval) clearInterval(pollingInterval);
     pollingInterval = setInterval(async () => {
+      // 0. Poll active image task if viewing one
+      if (isImageTaskView && activeImageTaskId) {
+        await pollImageTask(activeImageTaskId, false);
+      }
+
+      // Also refresh background running image tasks for sidebar badges
+      for (const it of imageTasks) {
+        if (it.status === "running") {
+          try {
+            const res = await fetch(`/api/image-tasks/${encodeURIComponent(it.taskId)}`);
+            const data = await res.json();
+            if (data.ok && data.task) {
+              it.status = data.task.status;
+              it.completedCount = data.task.completedCount;
+              it.remainingCount = data.task.remainingCount;
+              it.lastSavedImage = data.task.lastSavedImage;
+              renderImageTasksList();
+            }
+          } catch (e) {}
+        }
+      }
+
       // 1. Poll the active chat if running
       const activeChat = getActiveChat();
-      if (activeChat && (activeChat.status === "running" || activeChat.status === "waiting")) {
+      if (!isImageTaskView && activeChat && (activeChat.status === "running" || activeChat.status === "waiting")) {
         await pollChatMessages(activeChat.id, false);
       }
 
@@ -901,6 +1014,342 @@
     setTimeout(() => {
       toastEl.classList.remove("show");
     }, 3200);
+  }
+
+  // -------------------------------------------------------------
+  // Image Generation Tasks Management
+  // -------------------------------------------------------------
+
+  async function loadImageTasks() {
+    try {
+      const res = await fetch("/api/image-tasks");
+      const data = await res.json();
+      if (data.ok) {
+        imageTasks = data.tasks || [];
+        renderImageTasksList();
+      }
+    } catch (err) {
+      console.warn("Failed to load image tasks:", err);
+    }
+  }
+
+  function renderImageTasksList() {
+    imageTasksList.innerHTML = "";
+    if (imageTasks.length === 0) {
+      imageTasksList.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:12px;text-align:center;">No image tasks yet</div>';
+      return;
+    }
+
+    imageTasks.forEach(task => {
+      const item = document.createElement("div");
+      item.className = `chat-item image-task-item ${task.taskId === activeImageTaskId && isImageTaskView ? "active" : ""}`;
+      item.setAttribute("data-task-id", task.taskId);
+
+      const statusClass = (task.status || "paused").toLowerCase();
+
+      item.innerHTML = `
+        <div class="chat-item-header">
+          <span class="status-indicator ${statusClass}"></span>
+          <span class="chat-item-title">${escapeHtml(task.title || "Image Task")}</span>
+        </div>
+        <div class="chat-item-meta">
+          <span class="item-key-tag" style="color:var(--accent-emerald)">${task.completedCount || 0}/${task.totalRequested || 150}</span>
+          <span style="margin-left:auto">${formatTimeAgo(task.updatedAt || task.createdAt)}</span>
+        </div>
+      `;
+
+      item.addEventListener("click", () => {
+        selectImageTask(task.taskId);
+      });
+
+      imageTasksList.appendChild(item);
+    });
+  }
+
+  async function selectImageTask(taskId) {
+    isImageTaskView = true;
+    activeImageTaskId = taskId;
+    activeChatId = null;
+
+    // Highlight item
+    document.querySelectorAll(".chat-item").forEach(el => el.classList.remove("active"));
+    document.querySelectorAll(".image-task-item").forEach(el => {
+      el.classList.toggle("active", el.getAttribute("data-task-id") === taskId);
+    });
+
+    // Switch view
+    chatStreamContainer.style.display = "none";
+    imageTaskDashboard.style.display = "flex";
+    shareActionGroup.style.display = "none";
+
+    await pollImageTask(taskId, true);
+  }
+
+  async function pollImageTask(taskId, force = false) {
+    try {
+      const res = await fetch(`/api/image-tasks/${encodeURIComponent(taskId)}`);
+      const data = await res.json();
+      if (data.ok && data.task) {
+        const task = data.task;
+        // Update in list
+        const idx = imageTasks.findIndex(t => t.taskId === taskId);
+        if (idx !== -1) {
+          imageTasks[idx] = task;
+        } else {
+          imageTasks.unshift(task);
+        }
+        renderImageTasksList();
+
+        if (isImageTaskView && activeImageTaskId === taskId) {
+          renderImageTaskDashboard(task);
+        }
+      }
+    } catch (err) {
+      console.warn("Poll image task error:", err);
+    }
+  }
+
+  function renderImageTaskDashboard(task) {
+    // Header
+    itdTaskTitle.textContent = task.title || `TASK: Generate ${task.totalRequested} Images`;
+    itdScriptPreview.textContent = task.config?.script ? `Script: ${task.config.script}` : "";
+    itdStatusBadge.textContent = (task.status || "paused").toUpperCase();
+    itdStatusBadge.className = `status-badge ${task.status || "paused"}`;
+    itdKeyBadge.textContent = task.keyLabel || "Auto Pool";
+    itdTaskIdBadge.textContent = `ID: ${task.taskId}`;
+
+    // Stats
+    const total = task.totalRequested || 150;
+    const saved = task.completedCount || 0;
+    const remaining = task.remainingCount != null ? task.remainingCount : Math.max(0, total - saved);
+    const generating = task.currentlyGenerating || 0;
+    const failed = task.failedCount || 0;
+
+    itdStatTotal.textContent = total;
+    itdStatSaved.textContent = saved;
+    itdStatGenerating.textContent = generating;
+    itdStatRemaining.textContent = remaining;
+    itdStatFailed.textContent = failed;
+
+    // Progress Bar
+    const pct = total > 0 ? Math.min(100, Math.round((saved / total) * 1000) / 10) : 0;
+    itdProgressPct.textContent = `${pct}% Completed (${saved} / ${total})`;
+    itdProgressFill.style.width = `${pct}%`;
+    itdLastSavedLabel.textContent = task.lastSavedImage
+      ? `Last successfully saved image: ${task.lastSavedImage}`
+      : "No images saved yet";
+
+    // Panels based on status
+    if (task.status === "paused") {
+      itdResumePanel.style.display = "flex";
+      itdRunningBanner.style.display = "none";
+      itdPauseReason.textContent = task.pauseReason || "API quota exhausted";
+      itdPausedIndex.textContent = saved;
+      itdPausedTotal.textContent = total;
+      itdSavedCountText.textContent = saved;
+      itdNextIndex.textContent = saved + 1;
+      itdEndIndex.textContent = total;
+      itdResumeTaskBtn.disabled = !validatedKeyId && !task.keyId;
+    } else if (task.status === "running") {
+      itdResumePanel.style.display = "none";
+      itdRunningBanner.style.display = "flex";
+    } else {
+      itdResumePanel.style.display = "none";
+      itdRunningBanner.style.display = "none";
+    }
+
+    // Gallery
+    const savedImages = (task.images || []).filter(img => img.status === "saved");
+    itdGalleryCount.textContent = savedImages.length;
+    itdGalleryZipCount.textContent = savedImages.length;
+
+    renderGalleryGrid(savedImages, task.taskId);
+  }
+
+  function renderGalleryGrid(images, taskId) {
+    itdGalleryGrid.innerHTML = "";
+    if (images.length === 0) {
+      itdGalleryGrid.innerHTML = '<div style="color:var(--text-dim);font-size:13px;padding:24px;text-align:center;grid-column:1/-1;">No images saved yet. Images will appear here immediately as they are generated.</div>';
+      return;
+    }
+
+    images.forEach(img => {
+      const card = document.createElement("div");
+      card.className = "gallery-card";
+
+      const numStr = String(img.index).padStart(3, "0");
+      const kbSize = img.size ? `${Math.round(img.size / 1024)} KB` : "";
+
+      card.innerHTML = `
+        <div class="gallery-thumb-wrap">
+          <img src="${img.url}" alt="${img.filename}" loading="lazy" />
+          <span class="gallery-seq-badge">#${numStr}</span>
+        </div>
+        <div class="gallery-meta">
+          <div class="gallery-info">
+            <span class="gallery-filename" title="${img.filename}">${img.filename}</span>
+            <span class="gallery-size">${kbSize}</span>
+          </div>
+          <a href="${img.url}?download=1" download="${img.filename}" class="gallery-dl-btn" title="Download Image">
+            ⬇
+          </a>
+        </div>
+      `;
+
+      itdGalleryGrid.appendChild(card);
+    });
+  }
+
+  async function handleValidateNewKey() {
+    const rawKey = itdNewApiKey.value.trim();
+    const label = itdNewKeyLabel.value.trim();
+    if (!rawKey) {
+      itdKeyFeedback.className = "itd-feedback error";
+      itdKeyFeedback.textContent = "Please enter a valid Manus API key";
+      return;
+    }
+
+    itdValidateKeyBtn.disabled = true;
+    itdValidateKeyBtn.innerHTML = "<span>Validating Key...</span>";
+    itdKeyFeedback.className = "itd-feedback";
+    itdKeyFeedback.textContent = "Connecting to Manus API...";
+
+    try {
+      const res = await fetch("/api/keys/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: rawKey, label, autoAdd: true })
+      });
+      const data = await res.json();
+
+      if (data.ok && data.valid) {
+        validatedKeyId = data.keyId;
+        itdKeyFeedback.className = "itd-feedback success";
+        itdKeyFeedback.textContent = `✓ Key validated! Status: Active (${data.credits?.total ?? "Unlimited"} credits, ${data.user?.email || "verified"})`;
+        itdResumeTaskBtn.disabled = false;
+        await loadKeys();
+        showToast("New API key verified and added to pool!");
+      } else {
+        itdKeyFeedback.className = "itd-feedback error";
+        itdKeyFeedback.textContent = `✗ ${data.error || "Validation failed"}`;
+        itdResumeTaskBtn.disabled = true;
+      }
+    } catch (err) {
+      itdKeyFeedback.className = "itd-feedback error";
+      itdKeyFeedback.textContent = `Network error: ${err.message}`;
+    } finally {
+      itdValidateKeyBtn.disabled = false;
+      itdValidateKeyBtn.innerHTML = "<span>🔍 Validate API Key</span>";
+    }
+  }
+
+  async function handleResumeTask() {
+    if (!activeImageTaskId) return;
+
+    itdResumeTaskBtn.disabled = true;
+    itdResumeTaskBtn.innerHTML = "<span>Resuming...</span>";
+
+    try {
+      const body = {};
+      if (validatedKeyId) body.keyId = validatedKeyId;
+
+      const res = await fetch(`/api/image-tasks/${encodeURIComponent(activeImageTaskId)}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        showToast("▶ Task resumed! Continuing from first incomplete image.");
+        await pollImageTask(activeImageTaskId, true);
+      } else {
+        showToast(`Resume error: ${data.error || "Failed to resume task"}`);
+      }
+    } catch (err) {
+      showToast(`Network error: ${err.message}`);
+    } finally {
+      itdResumeTaskBtn.disabled = false;
+      itdResumeTaskBtn.innerHTML = "<span>▶ Resume Task</span>";
+    }
+  }
+
+  async function handlePauseTask() {
+    if (!activeImageTaskId) return;
+    try {
+      const res = await fetch(`/api/image-tasks/${encodeURIComponent(activeImageTaskId)}/pause`, {
+        method: "POST"
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast("⏸ Task paused safely. All completed images preserved.");
+        await pollImageTask(activeImageTaskId, true);
+      }
+    } catch (err) {
+      showToast("Error pausing task: " + err.message);
+    }
+  }
+
+  function handleDownloadZip(taskId) {
+    if (!taskId) return;
+    showToast("Preparing ZIP archive of completed images...");
+    window.location.href = `/api/image-tasks/${encodeURIComponent(taskId)}/download-zip`;
+  }
+
+  function openImageTaskModal() {
+    imageTaskModalOverlay.classList.add("open");
+    imageTaskFeedback.textContent = "";
+  }
+
+  function closeImageTaskModal() {
+    imageTaskModalOverlay.classList.remove("open");
+  }
+
+  async function handleCreateImageTask(e) {
+    e.preventDefault();
+    const title = itTaskTitle.value.trim();
+    const totalCount = parseInt(itTotalCount.value || 150, 10);
+    const script = itScript.value.trim();
+    const aspectRatio = itAspectRatio.value;
+    const style = itStyle.value;
+
+    launchImageTaskBtn.disabled = true;
+    launchImageTaskBtn.innerHTML = "<span>Launching...</span>";
+    imageTaskFeedback.className = "form-feedback";
+    imageTaskFeedback.textContent = "Initializing persistent task...";
+
+    try {
+      const res = await fetch("/api/image-tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          totalRequested: totalCount,
+          script,
+          aspectRatio,
+          style,
+          keyId: keySelector.value === "auto" ? null : keySelector.value
+        })
+      });
+      const data = await res.json();
+
+      if (data.ok && data.task) {
+        imageTasks.unshift(data.task);
+        renderImageTasksList();
+        closeImageTaskModal();
+        selectImageTask(data.task.taskId);
+        showToast(`Image task started: ${totalCount} images requested.`);
+      } else {
+        imageTaskFeedback.className = "form-feedback error";
+        imageTaskFeedback.textContent = data.error || "Failed to launch task";
+      }
+    } catch (err) {
+      imageTaskFeedback.className = "form-feedback error";
+      imageTaskFeedback.textContent = `Error: ${err.message}`;
+    } finally {
+      launchImageTaskBtn.disabled = false;
+      launchImageTaskBtn.innerHTML = "<span>🚀 Launch Image Task</span>";
+    }
   }
 
   // Kickoff

@@ -3,6 +3,11 @@
 .env.local
 *.log
 data/keys.json
+data/chats.json
+data/image_tasks.json
+data/images/
+data/tasks/
+**/test-data/
 
 # Node dependencies
 node_modules/
@@ -11,3 +16,4 @@ package-lock.json
 # OS files
 Thumbs.db
 .DS_Store
+

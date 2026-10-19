@@ -4,6 +4,11 @@ import { createReadStream, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ImageStorage } from "./lib/imageStorage.mjs";
+import { TaskCheckpointManager } from "./lib/taskCheckpoint.mjs";
+import { ImageTaskEngine } from "./lib/imageTaskEngine.mjs";
+import { KeyManager } from "./lib/keyManager.mjs";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 const dataDir = path.join(__dirname, "data");
@@ -41,11 +46,12 @@ const mimeTypes = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
-  ".ico": "image/x-icon"
+  ".ico": "image/x-icon",
+  ".zip": "application/zip"
 };
 
 // -------------------------------------------------------------
-// Storage Management (Keys & Chats)
+// Storage & Checkpoint Management
 // -------------------------------------------------------------
 
 async function loadJson(filePath, defaultValue) {
@@ -67,7 +73,23 @@ async function saveJson(filePath, data) {
   }
 }
 
-let keyPool = await loadJson(keysFilePath, []);
+// Initialize Persistent Subsystems
+export const imageStorage = new ImageStorage(dataDir);
+await imageStorage.init();
+
+export const checkpointManager = new TaskCheckpointManager(dataDir, imageStorage);
+await checkpointManager.init();
+
+export const keyManager = new KeyManager(keysFilePath);
+await keyManager.init();
+
+export const imageTaskEngine = new ImageTaskEngine({
+  checkpointManager,
+  imageStorage,
+  keyManager
+});
+
+let keyPool = keyManager.keyPool;
 let chatList = await loadJson(chatsFilePath, []);
 
 // Sync with .env / environment variables if needed
@@ -117,7 +139,7 @@ async function initializeKeys() {
   }
 
   if (modified) {
-    await saveJson(keysFilePath, keyPool);
+    await keyManager.save();
   }
 
   // Refresh info in background for keys without info
@@ -131,36 +153,15 @@ async function initializeKeys() {
 await initializeKeys();
 
 function maskKey(key) {
-  if (!key || key.length < 10) return "••••••••";
-  return key.slice(0, 7) + "••••••••" + key.slice(-4);
+  return keyManager.maskKey(key);
 }
 
 function getSafeKeys() {
-  return keyPool.map(k => ({
-    id: k.id,
-    label: k.label,
-    masked: maskKey(k.key),
-    status: k.status,
-    createdAt: k.createdAt,
-    lastUsedAt: k.lastUsedAt,
-    credits: k.credits,
-    user: k.user
-  }));
+  return keyManager.getSafeKeys();
 }
 
 function getKeyById(keyId) {
-  if (!keyId || keyId === "auto") {
-    // Pick active key (round robin / least recently used)
-    const activeKeys = keyPool.filter(k => k.status === "active");
-    if (!activeKeys.length) return null;
-    activeKeys.sort((a, b) => {
-      const aTime = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
-      const bTime = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
-      return aTime - bTime;
-    });
-    return activeKeys[0];
-  }
-  return keyPool.find(k => k.id === keyId) || null;
+  return keyManager.getKey(keyId);
 }
 
 async function refreshKeyInfo(keyId) {
@@ -554,6 +555,198 @@ async function handleApi(req, res, url) {
   }
 
   try {
+    // 0. Image Serving & Download Endpoints
+    if (url.pathname.startsWith("/api/images/")) {
+      const parts = url.pathname.slice("/api/images/".length).split("/");
+      if (parts.length >= 2) {
+        const taskId = decodeURIComponent(parts[0]);
+        const filename = decodeURIComponent(parts.slice(1).join("/"));
+        const imgPath = imageStorage.getImagePath(taskId, filename);
+        if (existsSync(imgPath)) {
+          const ext = path.extname(filename).toLowerCase();
+          const contentType = mimeTypes[ext] || "image/png";
+          const isDownload = url.searchParams.get("download") === "1";
+          const headers = {
+            "Content-Type": contentType,
+            "Cache-Control": "public, max-age=86400"
+          };
+          if (isDownload) {
+            headers["Content-Disposition"] = `attachment; filename="${filename}"`;
+          }
+          res.writeHead(200, headers);
+          return createReadStream(imgPath).pipe(res);
+        }
+      }
+      return sendJson(res, 404, { ok: false, error: "Image not found on disk" });
+    }
+
+    // ZIP Download for tasks or chats (works when running, paused, or completed)
+    if (
+      url.pathname.endsWith("/download-zip") &&
+      (url.pathname.startsWith("/api/tasks/") ||
+        url.pathname.startsWith("/api/image-tasks/") ||
+        url.pathname.startsWith("/api/chats/"))
+    ) {
+      const segments = url.pathname.split("/");
+      let targetId = decodeURIComponent(segments[3] || "");
+      if (segments[2] === "chats") {
+        targetId = `chat_${targetId}`;
+      }
+      try {
+        const zip = await imageStorage.createTaskZip(targetId);
+        res.writeHead(200, {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${zip.filename}"`,
+          "Content-Length": String(zip.buffer.length),
+          "Cache-Control": "no-store"
+        });
+        return res.end(zip.buffer);
+      } catch (err) {
+        return sendJson(res, 404, { ok: false, error: err.message });
+      }
+    }
+
+    // Validate a new API key with clear diagnosis
+    if (url.pathname === "/api/keys/validate" && req.method === "POST") {
+      const body = await readJson(req);
+      const rawKey = String(body.key || "").trim();
+      const label = String(body.label || "").trim();
+      const autoAdd = body.autoAdd !== false;
+
+      const result = await keyManager.validateKey(rawKey);
+      if (!result.valid) {
+        return sendJson(res, 400, { ok: false, ...result });
+      }
+
+      let entry = null;
+      if (autoAdd) {
+        entry = await keyManager.addValidatedKey({
+          rawKey,
+          label,
+          validationResult: result
+        });
+        keyPool = keyManager.keyPool;
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        valid: true,
+        status: result.status,
+        masked: result.masked,
+        credits: result.credits,
+        user: result.user,
+        keyId: entry ? entry.id : null,
+        message: "API key validated successfully"
+      });
+    }
+
+    // Image Generation Tasks API
+    if (url.pathname === "/api/image-tasks" && req.method === "GET") {
+      const tasks = checkpointManager.listTasks();
+      return sendJson(res, 200, { ok: true, tasks });
+    }
+
+    if (url.pathname === "/api/image-tasks" && req.method === "POST") {
+      const body = await readPayload(req);
+      const title = String(body.title || "").trim();
+      const script = String(body.script || body.prompt || "").trim();
+      const totalRequested = parseInt(body.totalRequested || body.count || 150, 10);
+      const keyId = String(body.keyId || "").trim();
+
+      const task = await checkpointManager.createTask({
+        title: title || `Generate ${totalRequested} Images`,
+        totalRequested: Number.isInteger(totalRequested) && totalRequested > 0 ? totalRequested : 150,
+        script,
+        referenceImages: (body.files || []).map(f => f.name),
+        settings: {
+          aspectRatio: body.aspectRatio || "16:9",
+          style: body.style || "photorealistic"
+        },
+        keyId: keyId || (keyManager.getEligibleKey()?.id)
+      });
+
+      // Start execution in background
+      await imageTaskEngine.startTask(task.taskId);
+
+      return sendJson(res, 201, {
+        ok: true,
+        taskId: task.taskId,
+        task
+      });
+    }
+
+    if (url.pathname.startsWith("/api/image-tasks/") && req.method === "GET") {
+      const taskId = decodeURIComponent(url.pathname.slice("/api/image-tasks/".length).replace(/\/.*$/, ""));
+      const cp = await checkpointManager.reconcileCheckpoint(taskId);
+      if (!cp) return sendJson(res, 404, { ok: false, error: "Task not found" });
+
+      const safeCp = {
+        ...cp,
+        keyLabel: keyManager.getKey(cp.keyId)?.label || "Auto Pool",
+        maskedKey: keyManager.maskKey(keyManager.getKey(cp.keyId)?.key)
+      };
+      return sendJson(res, 200, { ok: true, task: safeCp });
+    }
+
+    if (url.pathname.match(/^\/api\/image-tasks\/[^/]+\/resume$/) && req.method === "POST") {
+      const taskId = decodeURIComponent(url.pathname.split("/")[3]);
+      const body = await readJson(req).catch(() => ({}));
+      let newKeyId = body.keyId || null;
+
+      if (body.key) {
+        const val = await keyManager.validateKey(body.key);
+        if (!val.valid) {
+          return sendJson(res, 400, { ok: false, error: val.error, status: val.status });
+        }
+        const added = await keyManager.addValidatedKey({
+          rawKey: body.key,
+          label: body.label,
+          validationResult: val
+        });
+        newKeyId = added.id;
+        keyPool = keyManager.keyPool;
+      }
+
+      const result = await imageTaskEngine.startTask(taskId, { keyId: newKeyId });
+      const updatedCp = await checkpointManager.getCheckpoint(taskId);
+      return sendJson(res, 200, { ok: true, result, task: updatedCp });
+    }
+
+    if (url.pathname.match(/^\/api\/image-tasks\/[^/]+\/pause$/) && req.method === "POST") {
+      const taskId = decodeURIComponent(url.pathname.split("/")[3]);
+      const result = await imageTaskEngine.pauseTask(taskId, "User requested pause");
+      const updatedCp = await checkpointManager.getCheckpoint(taskId);
+      return sendJson(res, 200, { ok: true, result, task: updatedCp });
+    }
+
+    if (url.pathname.match(/^\/api\/image-tasks\/[^/]+\/key$/) && req.method === "POST") {
+      const taskId = decodeURIComponent(url.pathname.split("/")[3]);
+      const body = await readJson(req);
+      let targetKeyId = body.keyId || null;
+
+      if (body.key) {
+        const val = await keyManager.validateKey(body.key);
+        if (!val.valid) {
+          return sendJson(res, 400, { ok: false, error: val.error, status: val.status });
+        }
+        const added = await keyManager.addValidatedKey({
+          rawKey: body.key,
+          label: body.label,
+          validationResult: val
+        });
+        targetKeyId = added.id;
+        keyPool = keyManager.keyPool;
+      }
+
+      if (!targetKeyId) {
+        return sendJson(res, 400, { ok: false, error: "key or keyId required" });
+      }
+
+      await checkpointManager.updateCheckpoint(taskId, { keyId: targetKeyId });
+      const updatedCp = await checkpointManager.getCheckpoint(taskId);
+      return sendJson(res, 200, { ok: true, keyId: targetKeyId, task: updatedCp });
+    }
+
     // 1. System status
     if (url.pathname === "/api/status" && req.method === "GET") {
       const activeKeys = keyPool.filter(k => k.status === "active");
