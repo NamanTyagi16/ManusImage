@@ -36,8 +36,8 @@
           <kbd class="shortcut-key">⌘N</kbd>
         </button>
 
-        <!-- NEW IMAGE TASK BUTTON -->
-        <button class="btn-new-chat btn-new-image-task" id="newImageTaskBtn" type="button" style="margin-top: 6px; background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);">
+        <!-- NEW IMAGE TASK BUTTON (Optional/Hidden for pure chat workflow) -->
+        <button class="btn-new-chat btn-new-image-task" id="newImageTaskBtn" type="button" style="display: none;">
           <span class="btn-icon">🎨</span>
           <span class="btn-text">Batch Image Generator</span>
         </button>
@@ -107,6 +107,12 @@
           </div>
 
           <div class="appbar-right">
+            <!-- IN-CHAT SAVED IMAGES ZIP DOWNLOAD BUTTON -->
+            <button class="btn-chat-zip" id="chatDownloadZipBtn" type="button" style="display: none;" title="Download all images generated in this chat as a ZIP">
+              <span>📦 Download Images (ZIP)</span>
+              <span class="chat-zip-badge" id="chatZipBadge">0</span>
+            </button>
+
             <!-- PUBLIC CHAT SHARE BUTTON -->
             <div class="share-action-group" id="shareActionGroup" style="display: none;">
               <button class="btn-share-link" id="copyShareUrlBtn" type="button" title="Copy public Manus link">
@@ -121,6 +127,14 @@
 
         <!-- CHAT STREAM -->
         <div class="chat-stream-container" id="chatStreamContainer">
+          <!-- DRAG & DROP OVERLAY -->
+          <div class="drag-drop-overlay" id="dragDropOverlay" style="display: none;">
+            <div class="drag-drop-box">
+              <span class="drag-drop-icon">🖼️</span>
+              <strong>Drop your reference images or files here</strong>
+              <small>They will be attached to your next prompt</small>
+            </div>
+          </div>
           <!-- EMPTY STATE / HERO -->
           <div class="empty-hero" id="emptyHero">
             <div class="hero-badge">⚡ Manus AI Unlimited Multi-Key Engine</div>
@@ -323,8 +337,9 @@
             <div class="attachment-tray" id="attachmentTray"></div>
 
             <div class="composer-input-row">
-              <button class="btn-attach" id="attachBtn" type="button" title="Attach files or media">
-                <span>📎</span>
+              <button class="btn-attach" id="attachBtn" type="button" title="Attach reference image or document (or paste Ctrl+V, drag & drop)">
+                <span class="btn-attach-icon">📎</span>
+                <span class="btn-attach-label">Attach Image / File</span>
               </button>
               <input
                 type="file"
@@ -337,7 +352,7 @@
               <textarea
                 id="composerInput"
                 rows="1"
-                placeholder="Give Manus a task or ask a follow-up question... (Shift+Enter for new line)"
+                placeholder="Attach reference image, paste script, ask questions, or direct image generation... (Shift+Enter for newline, Ctrl+V to paste image)"
               ></textarea>
 
               <button class="btn-send" id="sendBtn" type="submit" title="Send">

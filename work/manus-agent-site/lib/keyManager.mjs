@@ -114,6 +114,15 @@ export class KeyManager {
     }
   }
 
+  async markKeyCooldown(keyId, retryAfterMs = 60000, reason = null) {
+    const key = this.keyPool.find(k => k.id === keyId);
+    if (key) {
+      key.cooldownUntil = Date.now() + retryAfterMs;
+      key.pauseReason = reason || "Cooldown";
+      await this.save();
+    }
+  }
+
   /**
    * Validates a raw API key against Manus API v2.
    * Separately detects invalid auth, quota exhaustion, and valid active keys.

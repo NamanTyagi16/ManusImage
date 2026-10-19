@@ -622,6 +622,82 @@ button {
   color: var(--text-dim);
 }
 
+/* In-Chat ZIP Download Button in Appbar */
+.btn-chat-zip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(124, 58, 237, 0.35);
+  transition: all 0.15s ease;
+}
+
+.btn-chat-zip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.5);
+}
+
+.chat-zip-badge {
+  background: rgba(255, 255, 255, 0.25);
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* Drag & Drop Overlay */
+.drag-drop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  pointer-events: none;
+}
+
+.drag-drop-box {
+  width: 100%;
+  max-width: 500px;
+  border: 2px dashed var(--accent-primary);
+  border-radius: var(--radius-lg);
+  background: rgba(16, 185, 129, 0.08);
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.drag-drop-icon {
+  font-size: 40px;
+}
+
+.drag-drop-box strong {
+  font-size: 16px;
+  color: var(--text-main);
+}
+
+.drag-drop-box small {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
 /* Share Action Group */
 .share-action-group {
   display: flex;
@@ -959,7 +1035,7 @@ button {
 .attachment-card {
   margin-top: 10px;
   padding: 10px 14px;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   display: flex;
@@ -967,12 +1043,64 @@ button {
   gap: 12px;
 }
 
-.attachment-card img {
-  max-width: 100%;
-  max-height: 280px;
-  border-radius: var(--radius-sm);
-  margin-top: 6px;
+.image-attachment-card {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  max-width: 480px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.image-attachment-card a img {
+  width: 100%;
+  max-height: 380px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  display: block;
+  background: #000;
+  border: 1px solid var(--border-subtle);
+}
+
+.attachment-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.attachment-card-footer .attachment-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-card-download {
+  padding: 4px 10px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--accent-primary);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.btn-card-download:hover {
+  background: var(--accent-primary);
+  color: #ffffff;
 }
 
 .attachment-card video {
@@ -1159,6 +1287,84 @@ button {
   gap: 8px;
 }
 
+.composer-attach-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  max-width: 240px;
+  position: relative;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.composer-attach-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.composer-attach-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--accent-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.composer-attach-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+}
+
+.composer-attach-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-attach-size {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.composer-attach-del {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.composer-attach-del:hover {
+  background: var(--accent-rose);
+  color: #ffffff;
+}
+
 .attachment-pill {
   padding: 4px 10px;
   background: var(--bg-input);
@@ -1188,21 +1394,44 @@ button {
 }
 
 .btn-attach {
-  width: 36px;
-  height: 36px;
+  padding: 8px 12px;
+  height: 38px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: 18px;
+  gap: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
   transition: all 0.15s ease;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .btn-attach:hover {
-  background: var(--bg-input);
-  color: var(--text-main);
+  background: var(--bg-card-hover);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.btn-attach-icon {
+  font-size: 16px;
+}
+
+.btn-attach-label {
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .btn-attach-label {
+    display: none;
+  }
+  .btn-attach {
+    padding: 8px;
+  }
 }
 
 .composer-input-row textarea {

@@ -539,6 +539,20 @@ async function ensurePublicShareUrl(taskId, apiKey) {
   }
 }
 
+function isQuotaOrRateLimitError(res) {
+  if (!res) return false;
+  if ([429, 402, 403].includes(res.status)) return true;
+  const msg = String(res.error || res.message || res.detail || JSON.stringify(res)).toLowerCase();
+  return (
+    msg.includes("quota") ||
+    msg.includes("rate limit") ||
+    msg.includes("credit") ||
+    msg.includes("insufficient") ||
+    msg.includes("exhausted") ||
+    msg.includes("too many requests")
+  );
+}
+
 // -------------------------------------------------------------
 // API Router
 // -------------------------------------------------------------
@@ -590,7 +604,7 @@ async function handleApi(req, res, url) {
       const segments = url.pathname.split("/");
       let targetId = decodeURIComponent(segments[3] || "");
       if (segments[2] === "chats") {
-        targetId = `chat_${targetId}`;
+        targetId = targetId.startsWith("chat_") ? targetId : `chat_${targetId}`;
       }
       try {
         const zip = await imageStorage.createTaskZip(targetId);
@@ -910,30 +924,59 @@ async function handleApi(req, res, url) {
         return sendJson(res, 400, { ok: false, error: "Prompt or attachment is required" });
       }
 
-      const activeKey = getKeyById(requestedKeyId);
-      if (!activeKey) {
+      // Collect eligible candidate keys (specific requested first, then rest of active pool)
+      let candidateKeys = [];
+      if (requestedKeyId && requestedKeyId !== "auto") {
+        const specific = getKeyById(requestedKeyId);
+        if (specific) candidateKeys.push(specific);
+      }
+
+      const activeKeys = keyPool.filter(k => k.status === "active");
+      for (const k of activeKeys) {
+        if (!candidateKeys.some(c => c.id === k.id)) candidateKeys.push(k);
+      }
+
+      if (candidateKeys.length === 0) {
         return sendJson(res, 400, {
           ok: false,
           error: "No active Manus API key available. Please add an API key in the Keys Manager."
         });
       }
 
-      // Mark key used time
-      activeKey.lastUsedAt = new Date().toISOString();
-      await saveJson(keysFilePath, keyPool);
+      let createRes = null;
+      let activeKey = null;
 
-      const messageContent = await buildMessageContent(content, files, activeKey.key);
-      const createRes = await manusFetch("/task.create", activeKey.key, {
-        method: "POST",
-        body: JSON.stringify({
-          message: { content: messageContent },
-          title: content ? content.slice(0, 80) : "Attached files task",
-          share_visibility: "public" // ALWAYS PUBLIC as requested!
-        })
-      });
+      for (const candidateKey of candidateKeys) {
+        activeKey = candidateKey;
+        activeKey.lastUsedAt = new Date().toISOString();
+        await saveJson(keysFilePath, keyPool);
 
-      if (createRes.ok === false) {
-        return sendJson(res, createRes.status || 502, createRes);
+        const messageContent = await buildMessageContent(content, files, activeKey.key);
+        createRes = await manusFetch("/task.create", activeKey.key, {
+          method: "POST",
+          body: JSON.stringify({
+            message: { content: messageContent },
+            title: content ? content.slice(0, 80) : "Attached files task",
+            share_visibility: "public" // ALWAYS PUBLIC as requested!
+          })
+        });
+
+        if (createRes.ok !== false && !createRes.error) {
+          break; // Success!
+        }
+
+        // Automatic transparent failover on quota / rate limit without prompting user
+        if (isQuotaOrRateLimitError(createRes)) {
+          console.warn(`[Auto-Failover] Key ${activeKey.id} hit quota/rate limit: ${createRes.error || "quota exhausted"}. Rotating to next available key.`);
+          keyManager.markKeyCooldown(activeKey.id, 60000, createRes.error || "Quota exhausted");
+          continue;
+        } else {
+          break; // Non-recoverable error
+        }
+      }
+
+      if (!createRes || createRes.ok === false) {
+        return sendJson(res, createRes?.status || 502, createRes || { error: "Failed to create task" });
       }
 
       const taskId = createRes.task_id || createRes.task?.id || createRes.id;
@@ -998,7 +1041,10 @@ async function handleApi(req, res, url) {
       }
 
       const keyId = chat ? chat.keyId : (body.keyId || "");
-      const keyObj = getKeyById(keyId);
+      let keyObj = getKeyById(keyId);
+      if (!keyObj) {
+        keyObj = keyManager.getEligibleKey() || keyPool.find(k => k.status === "active");
+      }
       if (!keyObj) {
         return sendJson(res, 400, { ok: false, error: "No API key associated with this task" });
       }
@@ -1007,13 +1053,40 @@ async function handleApi(req, res, url) {
       await saveJson(keysFilePath, keyPool);
 
       const messageContent = await buildMessageContent(content, files, keyObj.key);
-      const sendRes = await manusFetch("/task.sendMessage", keyObj.key, {
+      let sendRes = await manusFetch("/task.sendMessage", keyObj.key, {
         method: "POST",
         body: JSON.stringify({
           task_id: taskId,
           message: { content: messageContent }
         })
       });
+
+      // Automatic transparent failover on quota / rate limit without prompting user
+      if (sendRes.ok === false && isQuotaOrRateLimitError(sendRes)) {
+        console.warn(`[Auto-Failover] Message key ${keyObj.id} hit quota. Trying fallback active keys.`);
+        keyManager.markKeyCooldown(keyObj.id, 60000, sendRes.error || "Quota exhausted");
+        const otherKeys = keyPool.filter(k => k.status === "active" && k.id !== keyObj.id);
+        for (const fallbackKey of otherKeys) {
+          fallbackKey.lastUsedAt = new Date().toISOString();
+          await saveJson(keysFilePath, keyPool);
+          const fallbackContent = await buildMessageContent(content, files, fallbackKey.key);
+          const altRes = await manusFetch("/task.sendMessage", fallbackKey.key, {
+            method: "POST",
+            body: JSON.stringify({
+              task_id: taskId,
+              message: { content: fallbackContent }
+            })
+          });
+          if (altRes.ok !== false && !altRes.error) {
+            sendRes = altRes;
+            if (chat) {
+              chat.keyId = fallbackKey.id;
+              chat.keyLabel = fallbackKey.label;
+            }
+            break;
+          }
+        }
+      }
 
       if (sendRes.ok === false) {
         return sendJson(res, sendRes.status || 502, sendRes);
@@ -1087,6 +1160,51 @@ async function handleApi(req, res, url) {
 
       const normalized = msgsData.ok ? normalizeMessages(msgsData) : (chat?.messages || []);
 
+      // Auto-persist assistant-generated images locally so they never expire
+      const chatStorageId = chat ? (chat.id.startsWith("chat_") ? chat.id : `chat_${chat.id}`) : `chat_${taskId}`;
+      let savedImagesCount = 0;
+      try {
+        let imgSeq = 1;
+        for (const msg of normalized) {
+          if (msg.role !== "user" && Array.isArray(msg.attachments)) {
+            for (const att of msg.attachments) {
+              if (att.type === "image" && att.url && /^https?:\/\//i.test(att.url)) {
+                const extMatch = att.url.match(/\.([a-z0-9]+)(?:\?|#|$)/i);
+                const ext = extMatch ? extMatch[1].toLowerCase() : "png";
+                const filename = `image_${String(imgSeq).padStart(3, "0")}.${ext}`;
+                const localPath = imageStorage.getImagePath(chatStorageId, filename);
+
+                if (!existsSync(localPath)) {
+                  try {
+                    const imgRes = await fetch(att.url);
+                    if (imgRes.ok) {
+                      const arrayBuf = await imgRes.arrayBuffer();
+                      const buf = Buffer.from(arrayBuf);
+                      if (buf.length > 0) {
+                        await imageStorage.saveImageAtomically(chatStorageId, filename, buf);
+                      }
+                    }
+                  } catch (dlErr) {
+                    console.warn(`Could not cache image ${att.url}:`, dlErr.message);
+                  }
+                }
+
+                if (existsSync(localPath)) {
+                  att.localUrl = `/api/images/${encodeURIComponent(chatStorageId)}/${encodeURIComponent(filename)}`;
+                  att.permanentUrl = att.localUrl;
+                }
+                imgSeq++;
+              }
+            }
+          }
+        }
+
+        const savedList = await imageStorage.listSavedImages(chatStorageId);
+        savedImagesCount = savedList.length;
+      } catch (saveErr) {
+        console.warn("Error auto-persisting chat images:", saveErr.message);
+      }
+
       // Update chat in storage
       if (chat) {
         chat.status = taskStatus;
@@ -1106,7 +1224,8 @@ async function handleApi(req, res, url) {
         taskUrl,
         shareUrl,
         creditUsage: taskDetail?.task?.credit_usage || null,
-        messages: normalized
+        messages: normalized,
+        savedImagesCount
       });
     }
 

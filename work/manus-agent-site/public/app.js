@@ -100,11 +100,14 @@
   const currentChatStatus = document.getElementById("currentChatStatus");
   const currentChatKey = document.getElementById("currentChatKey");
   const currentChatTaskId = document.getElementById("currentChatTaskId");
+  const chatDownloadZipBtn = document.getElementById("chatDownloadZipBtn");
+  const chatZipBadge = document.getElementById("chatZipBadge");
   const shareActionGroup = document.getElementById("shareActionGroup");
   const copyShareUrlBtn = document.getElementById("copyShareUrlBtn");
   const openShareUrlLink = document.getElementById("openShareUrlLink");
 
   const chatStreamContainer = document.getElementById("chatStreamContainer");
+  const dragDropOverlay = document.getElementById("dragDropOverlay");
   const emptyHero = document.getElementById("emptyHero");
   const messagesFlow = document.getElementById("messagesFlow");
 
@@ -217,6 +220,77 @@
     // File attachments
     attachBtn.addEventListener("click", () => fileInput.click());
     fileInput.addEventListener("change", handleFileSelection);
+
+    // In-chat saved images ZIP download button
+    if (chatDownloadZipBtn) {
+      chatDownloadZipBtn.addEventListener("click", () => {
+        if (!activeChatId) return;
+        showToast("Preparing ZIP archive of generated images...");
+        window.location.href = `/api/chats/${encodeURIComponent(activeChatId)}/download-zip`;
+      });
+    }
+
+    // Drag & Drop onto chat stream / composer
+    let dragCounter = 0;
+    window.addEventListener("dragenter", (e) => {
+      if (isImageTaskView) return;
+      e.preventDefault();
+      dragCounter++;
+      if (dragDropOverlay) dragDropOverlay.style.display = "flex";
+    });
+
+    window.addEventListener("dragover", (e) => {
+      if (isImageTaskView) return;
+      e.preventDefault();
+    });
+
+    window.addEventListener("dragleave", (e) => {
+      if (isImageTaskView) return;
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        if (dragDropOverlay) dragDropOverlay.style.display = "none";
+      }
+    });
+
+    window.addEventListener("drop", (e) => {
+      if (isImageTaskView) return;
+      e.preventDefault();
+      dragCounter = 0;
+      if (dragDropOverlay) dragDropOverlay.style.display = "none";
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const dropped = Array.from(e.dataTransfer.files);
+        selectedFiles.push(...dropped);
+        renderAttachmentTray();
+        showToast(`📎 Attached ${dropped.length} file(s) to prompt!`);
+      }
+    });
+
+    // Clipboard Paste (Ctrl+V) listener
+    window.addEventListener("paste", (e) => {
+      if (isImageTaskView) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      let pastedFilesCount = 0;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.startsWith("image/")) {
+          const file = items[i].getAsFile();
+          if (file) {
+            const ext = file.type.split("/")[1] || "png";
+            const namedFile = new File([file], `reference_image_${Date.now()}.${ext}`, { type: file.type });
+            selectedFiles.push(namedFile);
+            pastedFilesCount++;
+          }
+        }
+      }
+
+      if (pastedFilesCount > 0) {
+        renderAttachmentTray();
+        showToast(`📋 Attached ${pastedFilesCount} image(s) from clipboard!`);
+      }
+    });
 
     // Prompt Card clicks in empty state
     document.querySelectorAll(".prompt-card").forEach(card => {
@@ -446,6 +520,7 @@
     currentChatKey.textContent = "Auto Pool";
     currentChatTaskId.textContent = "";
     shareActionGroup.style.display = "none";
+    if (chatDownloadZipBtn) chatDownloadZipBtn.style.display = "none";
 
     emptyHero.style.display = "flex";
     messagesFlow.style.display = "none";
@@ -756,6 +831,15 @@
           updateStatusBadge(data.status);
           updateShareGroupUI(data.shareUrl);
           renderConversationMessages(data.messages || [], data.status, data.shareUrl);
+
+          if (chatDownloadZipBtn) {
+            if (data.savedImagesCount && data.savedImagesCount > 0) {
+              chatDownloadZipBtn.style.display = "inline-flex";
+              if (chatZipBadge) chatZipBadge.textContent = data.savedImagesCount;
+            } else {
+              chatDownloadZipBtn.style.display = "none";
+            }
+          }
         }
         renderChatList();
       }
@@ -811,12 +895,19 @@
       let attachmentsHtml = "";
       if (msg.attachments && msg.attachments.length > 0) {
         attachmentsHtml = msg.attachments.map(att => {
-          if (att.type === "image" && att.url) {
+          if (att.type === "image" && (att.localUrl || att.url)) {
+            const imgUrl = att.localUrl || att.url;
             return `
-              <div class="attachment-card">
-                <a href="${att.url}" target="_blank" rel="noopener noreferrer">
-                  <img src="${att.url}" alt="${escapeHtml(att.label)}" />
+              <div class="attachment-card image-attachment-card">
+                <a href="${imgUrl}" target="_blank" rel="noopener noreferrer">
+                  <img src="${imgUrl}" alt="${escapeHtml(att.label || 'Generated Image')}" loading="lazy" />
                 </a>
+                <div class="attachment-card-footer">
+                  <span class="attachment-name">${escapeHtml(att.label || "Generated Image")}</span>
+                  <a href="${imgUrl}?download=1" download="${escapeHtml(att.label || 'image.png')}" class="btn-card-download" title="Download image">
+                    ⬇ Download
+                  </a>
+                </div>
               </div>
             `;
           }
@@ -935,24 +1026,59 @@
     fileInput.value = "";
   }
 
+  let filePreviewUrls = new Map();
+
   function renderAttachmentTray() {
     attachmentTray.innerHTML = "";
     selectedFiles.forEach((file, index) => {
-      const pill = document.createElement("div");
-      pill.className = "attachment-pill";
-      pill.innerHTML = `
-        <span>📎 ${escapeHtml(file.name)}</span>
-        <span class="remove-file-btn" data-index="${index}">✕</span>
-      `;
-      pill.querySelector(".remove-file-btn").addEventListener("click", () => {
-        selectedFiles.splice(index, 1);
+      const isImg = file.type && file.type.startsWith("image/");
+      const card = document.createElement("div");
+      card.className = "composer-attach-card";
+
+      const kbSize = file.size ? `${Math.round(file.size / 1024)} KB` : "";
+      if (isImg) {
+        let objUrl = filePreviewUrls.get(file);
+        if (!objUrl) {
+          objUrl = URL.createObjectURL(file);
+          filePreviewUrls.set(file, objUrl);
+        }
+        card.innerHTML = `
+          <img class="composer-attach-thumb" src="${objUrl}" alt="${escapeHtml(file.name)}" />
+          <div class="composer-attach-info">
+            <span class="composer-attach-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+            <span class="composer-attach-size">${kbSize} • Reference Image</span>
+          </div>
+          <button class="composer-attach-del" title="Remove image" type="button">✕</button>
+        `;
+      } else {
+        card.innerHTML = `
+          <div class="composer-attach-icon">📄</div>
+          <div class="composer-attach-info">
+            <span class="composer-attach-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+            <span class="composer-attach-size">${kbSize}</span>
+          </div>
+          <button class="composer-attach-del" title="Remove file" type="button">✕</button>
+        `;
+      }
+
+      card.querySelector(".composer-attach-del").addEventListener("click", () => {
+        const removed = selectedFiles.splice(index, 1)[0];
+        if (removed && filePreviewUrls.has(removed)) {
+          URL.revokeObjectURL(filePreviewUrls.get(removed));
+          filePreviewUrls.delete(removed);
+        }
         renderAttachmentTray();
       });
-      attachmentTray.appendChild(pill);
+
+      attachmentTray.appendChild(card);
     });
   }
 
   function clearSelectedFiles() {
+    for (const url of filePreviewUrls.values()) {
+      URL.revokeObjectURL(url);
+    }
+    filePreviewUrls.clear();
     selectedFiles = [];
     attachmentTray.innerHTML = "";
   }
